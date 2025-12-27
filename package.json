@@ -1,0 +1,119 @@
+{
+    "name": "project-starter",
+    "displayName": "Project Starter",
+    "description": "Start frontend and backend servers with one click. Configure folders, select frameworks, and capture errors easily.",
+    "version": "1.0.0",
+    "publisher": "abdo4",
+    "icon": "media/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/abdo4/project-starter"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "*"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "projectStarter.openDashboard",
+                "title": "Project Starter: Open Dashboard",
+                "icon": "$(gear)"
+            },
+            {
+                "command": "projectStarter.configure",
+                "title": "Project Starter: Configure Project"
+            },
+            {
+                "command": "projectStarter.start",
+                "title": "Project Starter: Start Servers",
+                "icon": "$(play)"
+            },
+            {
+                "command": "projectStarter.stop",
+                "title": "Project Starter: Stop Servers",
+                "icon": "$(debug-stop)"
+            },
+            {
+                "command": "projectStarter.copyLastError",
+                "title": "Project Starter: Copy Last Error"
+            }
+        ],
+        "configuration": {
+            "title": "Project Starter",
+            "properties": {
+                "projectStarter.frontend.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the frontend folder (relative to workspace)"
+                },
+                "projectStarter.frontend.framework": {
+                    "type": "string",
+                    "enum": [
+                        "react-cra",
+                        "react-vite",
+                        "vue",
+                        "angular",
+                        "nextjs",
+                        "nuxt",
+                        "svelte",
+                        "custom"
+                    ],
+                    "default": "react-vite",
+                    "description": "Frontend framework"
+                },
+                "projectStarter.frontend.customCommand": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Custom start command for frontend (used when framework is 'custom')"
+                },
+                "projectStarter.backend.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the backend folder (relative to workspace)"
+                },
+                "projectStarter.backend.framework": {
+                    "type": "string",
+                    "enum": [
+                        "express",
+                        "nestjs",
+                        "django",
+                        "flask",
+                        "fastapi",
+                        "spring-boot",
+                        "custom"
+                    ],
+                    "default": "express",
+                    "description": "Backend framework"
+                },
+                "projectStarter.backend.customCommand": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Custom start command for backend (used when framework is 'custom')"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "eslint src --ext ts"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "@types/vscode": "^1.85.0",
+        "@typescript-eslint/eslint-plugin": "^6.13.0",
+        "@typescript-eslint/parser": "^6.13.0",
+        "@vscode/vsce": "^2.19.0",
+        "eslint": "^8.54.0",
+        "jszip": "^3.10.1",
+        "typescript": "^5.3.0"
+    }
+}

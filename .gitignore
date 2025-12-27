@@ -1,0 +1,8 @@
+node_modules
+out
+*.vsix
+.vscode-test
+manual-package.js
+package-extension.js
+package-lock.json
+.DS_Store
