@@ -96,6 +96,44 @@
                     "type": "string",
                     "default": "",
                     "description": "Custom start command for backend (used when framework is 'custom')"
+                },
+                "projectStarter.activeProfile": {
+                    "type": "string",
+                    "enum": [
+                        "dev",
+                        "prod",
+                        "test"
+                    ],
+                    "default": "dev",
+                    "description": "Active environment profile"
+                },
+                "projectStarter.profiles": {
+                    "type": "object",
+                    "default": {
+                        "dev": {
+                            "frontend": "",
+                            "backend": ""
+                        },
+                        "prod": {
+                            "frontend": "",
+                            "backend": ""
+                        },
+                        "test": {
+                            "frontend": "",
+                            "backend": ""
+                        }
+                    },
+                    "description": "Environment profiles with custom commands"
+                },
+                "projectStarter.useDocker": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use Docker if Dockerfile or docker-compose.yml is detected"
+                },
+                "projectStarter.autoRestart": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically restart servers if they crash"
                 }
             }
         }
