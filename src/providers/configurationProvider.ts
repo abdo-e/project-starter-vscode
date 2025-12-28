@@ -11,6 +11,15 @@ export interface ProjectConfig {
         framework: string;
         customCommand: string;
     };
+    activeProfile: string;
+    profiles: {
+        [key: string]: {
+            frontend: string;
+            backend: string;
+        }
+    };
+    useDocker: boolean;
+    autoRestart: boolean;
 }
 
 export class ConfigurationProvider {
@@ -36,7 +45,15 @@ export class ConfigurationProvider {
                 path: this.config.get<string>('backend.path') || '',
                 framework: this.config.get<string>('backend.framework') || 'express',
                 customCommand: this.config.get<string>('backend.customCommand') || ''
-            }
+            },
+            activeProfile: this.config.get<string>('activeProfile') || 'dev',
+            profiles: this.config.get<any>('profiles') || {
+                dev: { frontend: '', backend: '' },
+                prod: { frontend: '', backend: '' },
+                test: { frontend: '', backend: '' }
+            },
+            useDocker: this.config.get<boolean>('useDocker') || false,
+            autoRestart: this.config.get<boolean>('autoRestart') || false
         };
     }
 
@@ -62,6 +79,27 @@ export class ConfigurationProvider {
 
     async setBackendCustomCommand(command: string): Promise<void> {
         await this.config.update('backend.customCommand', command, vscode.ConfigurationTarget.Workspace);
+    }
+
+    async setActiveProfile(profile: string): Promise<void> {
+        await this.config.update('activeProfile', profile, vscode.ConfigurationTarget.Workspace);
+    }
+
+    async setProfileCommand(profile: string, type: 'frontend' | 'backend', command: string): Promise<void> {
+        const profiles = this.config.get<any>('profiles') || {};
+        if (!profiles[profile]) {
+            profiles[profile] = { frontend: '', backend: '' };
+        }
+        profiles[profile][type] = command;
+        await this.config.update('profiles', profiles, vscode.ConfigurationTarget.Workspace);
+    }
+
+    async setUseDocker(use: boolean): Promise<void> {
+        await this.config.update('useDocker', use, vscode.ConfigurationTarget.Workspace);
+    }
+
+    async setAutoRestart(auto: boolean): Promise<void> {
+        await this.config.update('autoRestart', auto, vscode.ConfigurationTarget.Workspace);
     }
 
     isConfigured(): boolean {
