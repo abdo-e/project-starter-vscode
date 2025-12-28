@@ -11,12 +11,11 @@ export interface ProjectConfig {
         framework: string;
         customCommand: string;
     };
-    activeProfile: string;
+    activeProfile: 'dev' | 'prod' | 'test';
     profiles: {
-        [key: string]: {
-            frontend: string;
-            backend: string;
-        }
+        dev: { frontend: string; backend: string };
+        prod: { frontend: string; backend: string };
+        test: { frontend: string; backend: string };
     };
     useDocker: boolean;
     autoRestart: boolean;
@@ -46,8 +45,8 @@ export class ConfigurationProvider {
                 framework: this.config.get<string>('backend.framework') || 'express',
                 customCommand: this.config.get<string>('backend.customCommand') || ''
             },
-            activeProfile: this.config.get<string>('activeProfile') || 'dev',
-            profiles: this.config.get<any>('profiles') || {
+            activeProfile: this.config.get<'dev' | 'prod' | 'test'>('activeProfile') || 'dev',
+            profiles: this.config.get('profiles') || {
                 dev: { frontend: '', backend: '' },
                 prod: { frontend: '', backend: '' },
                 test: { frontend: '', backend: '' }
@@ -59,48 +58,64 @@ export class ConfigurationProvider {
 
     async setFrontendPath(path: string): Promise<void> {
         await this.config.update('frontend.path', path, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setFrontendFramework(framework: string): Promise<void> {
         await this.config.update('frontend.framework', framework, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setFrontendCustomCommand(command: string): Promise<void> {
         await this.config.update('frontend.customCommand', command, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setBackendPath(path: string): Promise<void> {
         await this.config.update('backend.path', path, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setBackendFramework(framework: string): Promise<void> {
         await this.config.update('backend.framework', framework, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setBackendCustomCommand(command: string): Promise<void> {
         await this.config.update('backend.customCommand', command, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
-    async setActiveProfile(profile: string): Promise<void> {
+    async setActiveProfile(profile: 'dev' | 'prod' | 'test'): Promise<void> {
         await this.config.update('activeProfile', profile, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setProfileCommand(profile: string, type: 'frontend' | 'backend', command: string): Promise<void> {
-        const profiles = this.config.get<any>('profiles') || {};
+        const profiles = JSON.parse(JSON.stringify(this.config.get<any>('profiles') || {
+            dev: { frontend: '', backend: '' },
+            prod: { frontend: '', backend: '' },
+            test: { frontend: '', backend: '' }
+        }));
         if (!profiles[profile]) {
             profiles[profile] = { frontend: '', backend: '' };
         }
         profiles[profile][type] = command;
         await this.config.update('profiles', profiles, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setUseDocker(use: boolean): Promise<void> {
         await this.config.update('useDocker', use, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
 
     async setAutoRestart(auto: boolean): Promise<void> {
         await this.config.update('autoRestart', auto, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
     }
+
+
 
     isConfigured(): boolean {
         const config = this.getConfig();

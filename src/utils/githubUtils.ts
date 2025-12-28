@@ -15,6 +15,8 @@ export class GitHubUtils {
     }
 
     public static async generateBoilerplate(workspaceRoot: string): Promise<void> {
+        let createdAny = false;
+
         // Generate .gitignore
         const gitignorePath = path.join(workspaceRoot, '.gitignore');
         if (!fs.existsSync(gitignorePath)) {
@@ -89,6 +91,7 @@ atp-cache.json
 `;
             fs.writeFileSync(gitignorePath, gitignoreContent);
             vscode.window.showInformationMessage('Successfully generated .gitignore');
+            createdAny = true;
         }
 
         // Generate README.md
@@ -114,6 +117,11 @@ This project was scaffolded and configured using the [Project Starter](https://g
 `;
             fs.writeFileSync(readmePath, readmeContent);
             vscode.window.showInformationMessage('Successfully generated README.md');
+            createdAny = true;
+        }
+
+        if (!createdAny) {
+            vscode.window.showInformationMessage('GitHub setup files (.gitignore, README.md) already exist.');
         }
     }
 }

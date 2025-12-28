@@ -6,6 +6,7 @@ import { TemplateGenerator, TEMPLATES } from '../utils/templateGenerator';
 import { TaskGenerator } from '../utils/taskGenerator';
 import { EnvManager } from '../utils/envManager';
 import { GitHubUtils } from '../utils/githubUtils';
+import { LogProvider } from '../providers/logProvider';
 
 export class ConfigPanel {
     public static currentPanel: ConfigPanel | undefined;
@@ -19,14 +20,12 @@ export class ConfigPanel {
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
 
-        // If we already have a panel, show it
         if (ConfigPanel.currentPanel) {
             ConfigPanel.currentPanel._panel.reveal(column);
             ConfigPanel.currentPanel._update();
             return;
         }
 
-        // Otherwise, create a new panel
         const panel = vscode.window.createWebviewPanel(
             'projectStarterConfig',
             '🚀 Project Starter',
@@ -46,82 +45,89 @@ export class ConfigPanel {
         this._extensionUri = extensionUri;
         this._configProvider = configProvider;
 
-        // Set the webview's initial html content
-        this._update();
-
-        // Listen for when the panel is disposed
-        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-
-        // Handle messages from the webview
+        // Register message listener BEFORE update to avoid race conditions
         this._panel.webview.onDidReceiveMessage(
             async (message) => {
-                switch (message.command) {
-                    case 'selectFrontendFolder':
-                        await this._selectFolder('frontend');
-                        break;
-                    case 'selectBackendFolder':
-                        await this._selectFolder('backend');
-                        break;
-                    case 'setFrontendFramework':
-                        await this._configProvider.setFrontendFramework(message.value);
-                        break;
-                    case 'setBackendFramework':
-                        await this._configProvider.setBackendFramework(message.value);
-                        break;
-                    case 'setCustomCommand':
-                        if (message.type === 'frontend') {
-                            await this._configProvider.setFrontendCustomCommand(message.value);
-                        } else {
-                            await this._configProvider.setBackendCustomCommand(message.value);
-                        }
-                        break;
-                    case 'startServers':
-                        vscode.commands.executeCommand('projectStarter.start');
-                        break;
-                    case 'stopServers':
-                        vscode.commands.executeCommand('projectStarter.stop');
-                        break;
-                    case 'setActiveProfile':
-                        await this._configProvider.setActiveProfile(message.value);
-                        this._update();
-                        break;
-                    case 'setProfileCommand':
-                        await this._configProvider.setProfileCommand(message.profile, message.type, message.value);
-                        break;
-                    case 'setUseDocker':
-                        await this._configProvider.setUseDocker(message.value);
-                        this._update();
-                        break;
-                    case 'setAutoRestart':
-                        await this._configProvider.setAutoRestart(message.value);
-                        this._update();
-                        break;
-                    case 'generateProject':
-                        await this._handleGenerateProject(message.templateId);
-                        break;
-                    case 'generateTasks':
-                        await this._handleGenerateTasks();
-                        break;
-                    case 'getEnv':
-                        await this._handleGetEnv(message.type);
-                        break;
-                    case 'saveEnv':
-                        await this._handleSaveEnv(message.type, message.env);
-                        break;
-                    case 'githubInit':
-                        await this._handleGithubInit();
-                        break;
-                    case 'githubBoilerplate':
-                        await this._handleGithubBoilerplate();
-                        break;
-                    case 'refresh':
-                        this._update();
-                        break;
+                LogProvider.getInstance().log('DASHBOARD', `Action: ${message.command}`);
+                try {
+                    switch (message.command) {
+                        case 'selectFrontendFolder':
+                            await this._selectFolder('frontend');
+                            break;
+                        case 'selectBackendFolder':
+                            await this._selectFolder('backend');
+                            break;
+                        case 'setFrontendFramework':
+                            await this._configProvider.setFrontendFramework(message.value);
+                            break;
+                        case 'setBackendFramework':
+                            await this._configProvider.setBackendFramework(message.value);
+                            break;
+                        case 'setCustomCommand':
+                            if (message.type === 'frontend') {
+                                await this._configProvider.setFrontendCustomCommand(message.value);
+                            } else {
+                                await this._configProvider.setBackendCustomCommand(message.value);
+                            }
+                            break;
+                        case 'startServers':
+                            vscode.commands.executeCommand('projectStarter.start');
+                            break;
+                        case 'stopServers':
+                            vscode.commands.executeCommand('projectStarter.stop');
+                            break;
+                        case 'setActiveProfile':
+                            await this._configProvider.setActiveProfile(message.value);
+                            break;
+                        case 'setProfileCommand':
+                            await this._configProvider.setProfileCommand(message.profile, message.type, message.value);
+                            break;
+                        case 'setUseDocker':
+                            await this._configProvider.setUseDocker(message.value);
+                            break;
+                        case 'setAutoRestart':
+                            await this._configProvider.setAutoRestart(message.value);
+                            break;
+                        case 'generateProject':
+                            // Handle both value and templateId for robustness
+                            await this._handleGenerateProject(message.value || message.templateId);
+                            break;
+                        case 'generateTasks':
+                            await this._handleGenerateTasks();
+                            break;
+                        case 'getEnv':
+                            await this._handleGetEnv(message.type || message.value);
+                            break;
+                        case 'saveEnv':
+                            await this._handleSaveEnv(message.type, message.env);
+                            break;
+                        case 'githubInit':
+                            await this._handleGithubInit();
+                            break;
+                        case 'githubBoilerplate':
+                            await this._handleGithubBoilerplate();
+                            break;
+                        case 'refresh':
+                            this._update();
+                            break;
+                    }
+                } catch (error: any) {
+                    vscode.window.showErrorMessage(`Dashboard action failed: ${error.message}`);
                 }
             },
             null,
             this._disposables
         );
+
+        // Auto-refresh webview when configuration changes
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('projectStarter')) {
+                this._update();
+            }
+        }, null, this._disposables);
+
+        this._update();
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
     }
 
     private async _handleGenerateProject(templateId: string) {
@@ -131,13 +137,11 @@ export class ConfigPanel {
             return;
         }
 
-        const workspaceRoot = workspaceFolders[0].uri.fsPath;
-
         const folderUri = await vscode.window.showOpenDialog({
             canSelectFiles: false,
             canSelectFolders: true,
             canSelectMany: false,
-            defaultUri: vscode.Uri.file(workspaceRoot),
+            defaultUri: vscode.Uri.file(workspaceFolders[0].uri.fsPath),
             openLabel: 'Select Generation Directory',
             title: 'Select where to scaffold the new project'
         });
@@ -154,31 +158,21 @@ export class ConfigPanel {
     private async _handleGetEnv(type: 'frontend' | 'backend') {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) return;
-
         const config = this._configProvider.getConfig();
         const relPath = type === 'frontend' ? config.frontend.path : config.backend.path;
         if (!relPath) return;
-
         const envPath = path.join(workspaceFolders[0].uri.fsPath, relPath, '.env');
         const env = EnvManager.readEnv(envPath);
-
-        this._panel.webview.postMessage({
-            command: 'envData',
-            type,
-            env
-        });
+        this._panel.webview.postMessage({ command: 'envData', type, env });
     }
 
     private async _handleSaveEnv(type: 'frontend' | 'backend', env: Record<string, string>) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) return;
-
         const config = this._configProvider.getConfig();
         const relPath = type === 'frontend' ? config.frontend.path : config.backend.path;
         if (!relPath) return;
-
         const envPath = path.join(workspaceFolders[0].uri.fsPath, relPath, '.env');
-
         try {
             EnvManager.writeEnv(envPath, env);
             vscode.window.showInformationMessage(`Successfully saved ${type} .env file!`);
@@ -189,77 +183,73 @@ export class ConfigPanel {
 
     private async _handleGithubInit() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) return;
-        await GitHubUtils.initRepo(workspaceFolders[0].uri.fsPath);
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open. Open a folder to initialize Git.');
+            return;
+        }
+        try {
+            await GitHubUtils.initRepo(workspaceFolders[0].uri.fsPath);
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Git init failed: ${error.message}`);
+        }
     }
 
     private async _handleGithubBoilerplate() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) return;
-        await GitHubUtils.generateBoilerplate(workspaceFolders[0].uri.fsPath);
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open. Open a folder to generate GitHub Docs.');
+            return;
+        }
+        try {
+            await GitHubUtils.generateBoilerplate(workspaceFolders[0].uri.fsPath);
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`GitHub Docs generation failed: ${error.message}`);
+        }
     }
 
     private async _handleGenerateTasks() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            vscode.window.showErrorMessage('No workspace folder open.');
-            return;
-        }
-
-        const projectConfig = this._configProvider.getConfig();
-        const workspaceRoot = workspaceFolders[0].uri.fsPath;
-
-        try {
-            await TaskGenerator.generateTasks(projectConfig, workspaceRoot);
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to generate tasks: ${error.message}`);
-        }
+        if (!workspaceFolders || workspaceFolders.length === 0) return;
+        await TaskGenerator.generateTasks(this._configProvider.getConfig(), workspaceFolders[0].uri.fsPath);
     }
 
     private async _selectFolder(type: 'frontend' | 'backend') {
         const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            vscode.window.showErrorMessage('Please open a workspace folder first.');
-            return;
-        }
-
-        const workspaceRoot = workspaceFolders[0].uri.fsPath;
-
+        if (!workspaceFolders || workspaceFolders.length === 0) return;
         const folderUri = await vscode.window.showOpenDialog({
             canSelectFiles: false,
             canSelectFolders: true,
             canSelectMany: false,
-            defaultUri: vscode.Uri.file(workspaceRoot),
-            openLabel: `Select ${type === 'frontend' ? 'Frontend' : 'Backend'} Folder`,
-            title: `Select ${type === 'frontend' ? 'Frontend' : 'Backend'} Folder`
+            defaultUri: vscode.Uri.file(workspaceFolders[0].uri.fsPath),
+            openLabel: `Select ${type.charAt(0).toUpperCase() + type.slice(1)} Folder`
         });
 
         if (folderUri && folderUri.length > 0) {
-            const folderPath = folderUri[0].fsPath;
-            const relativePath = path.relative(workspaceRoot, folderPath) || '.';
-
+            const relPath = path.relative(workspaceFolders[0].uri.fsPath, folderUri[0].fsPath) || '.';
             if (type === 'frontend') {
-                await this._configProvider.setFrontendPath(relativePath);
-                const detected = await Detector.detectFrontend(folderPath);
-                if (detected) {
-                    await this._configProvider.setFrontendFramework(detected);
-                    vscode.window.showInformationMessage(`Detected frontend framework: ${detected}`);
-                }
+                await this._configProvider.setFrontendPath(relPath);
+                const detected = await Detector.detectFrontend(folderUri[0].fsPath);
+                if (detected) await this._configProvider.setFrontendFramework(detected);
             } else {
-                await this._configProvider.setBackendPath(relativePath);
-                const detected = await Detector.detectBackend(folderPath);
-                if (detected) {
-                    await this._configProvider.setBackendFramework(detected);
-                    vscode.window.showInformationMessage(`Detected backend framework: ${detected}`);
-                }
+                await this._configProvider.setBackendPath(relPath);
+                const detected = await Detector.detectBackend(folderUri[0].fsPath);
+                if (detected) await this._configProvider.setBackendFramework(detected);
             }
             this._update();
         }
     }
 
     private _update() {
-        const config = this._configProvider.getConfig();
-        this._panel.webview.html = this._getHtmlForWebview(config);
+        this._panel.webview.html = this._getHtmlForWebview(this._configProvider.getConfig());
+    }
+
+    public dispose() {
+        ConfigPanel.currentPanel = undefined;
+        this._panel.dispose();
+        while (this._disposables.length) {
+            const x = this._disposables.pop();
+            if (x) x.dispose();
+        }
     }
 
     private _getHtmlForWebview(config: any) {
@@ -269,12 +259,8 @@ export class ConfigPanel {
 
         if (workspaceFolders && workspaceFolders.length > 0) {
             const root = workspaceFolders[0].uri.fsPath;
-            if (config.frontend.path) {
-                frontendRecommendation = Detector.recommendScript(path.join(root, config.frontend.path)) || '';
-            }
-            if (config.backend.path) {
-                backendRecommendation = Detector.recommendScript(path.join(root, config.backend.path)) || '';
-            }
+            if (config.frontend.path) frontendRecommendation = Detector.recommendScript(path.join(root, config.frontend.path)) || '';
+            if (config.backend.path) backendRecommendation = Detector.recommendScript(path.join(root, config.backend.path)) || '';
         }
 
         return `<!DOCTYPE html>
@@ -282,707 +268,254 @@ export class ConfigPanel {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Starter</title>
     <style>
         :root {
-            --bg-primary: #1a1a2e;
-            --bg-secondary: #16213e;
-            --bg-card: #0f3460;
-            --accent: #e94560;
-            --accent-hover: #ff6b6b;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --success: #00d9a5;
-            --border-radius: 12px;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
-            color: var(--text-primary);
-            min-height: 100vh;
-            padding: 24px;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 8px;
-            background: linear-gradient(90deg, var(--accent), #ff8a9b);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .header p {
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-        }
-
-        .cards-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 24px;
-            margin-bottom: 32px;
-        }
-
-        .card {
-            background: rgba(15, 52, 96, 0.6);
-            backdrop-filter: blur(10px);
-            border-radius: var(--border-radius);
-            padding: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 32px rgba(233, 69, 96, 0.2);
-        }
-
-        .card-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .card-icon {
-            font-size: 2rem;
-        }
-
-        .card-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            font-weight: 500;
-        }
-
-        .folder-selector {
-            display: flex;
-            gap: 8px;
-        }
-
-        .folder-path {
-            flex: 1;
-            padding: 12px 16px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 0.9rem;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .folder-path.empty {
-            color: var(--text-secondary);
-            font-style: italic;
-        }
-
-        button {
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        select {
-            width: 100%;
-            padding: 12px 16px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 0.9rem;
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 16px center;
-        }
-
-        select option {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-        }
-
-        input[type="text"] {
-            width: 100%;
-            padding: 12px 16px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 0.9rem;
-        }
-
-        input[type="text"]:focus,
-        select:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        .actions {
-            display: flex;
-            gap: 16px;
-            justify-content: center;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), #ff6b6b);
-            color: white;
-            padding: 16px 48px;
-            font-size: 1.1rem;
-            box-shadow: 0 4px 24px rgba(233, 69, 96, 0.4);
-        }
-
-        .btn-primary:hover {
-            transform: scale(1.05);
-            box-shadow: 0 6px 32px rgba(233, 69, 96, 0.6);
-        }
-
-        .btn-danger {
-            background: rgba(233, 69, 96, 0.2);
-            color: var(--accent);
-            border: 1px solid var(--accent);
-        }
-
-        .btn-danger:hover {
-            background: var(--accent);
-            color: white;
-        }
-
-        .status {
-            text-align: center;
-            padding: 16px;
-            margin-top: 24px;
-            background: rgba(0, 217, 165, 0.1);
-            border: 1px solid var(--success);
-            border-radius: var(--border-radius);
-            color: var(--success);
-        }
-
-        .status.unconfigured {
-            background: rgba(233, 69, 96, 0.1);
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        .custom-command {
-            margin-top: 12px;
-            display: none;
-        }
-
-        .custom-command.visible {
-            display: block;
-        }
-
-        .profile-selector {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 32px;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 8px;
-            border-radius: 50px;
-            width: fit-content;
-            margin-left: auto;
-            margin-right: auto;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .profile-btn {
-            padding: 8px 24px;
-            border-radius: 25px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            background: transparent;
-            color: var(--text-secondary);
-        }
-
-        .profile-btn.active {
-            background: var(--accent);
-            color: white;
-            box-shadow: 0 4px 12px rgba(233, 69, 96, 0.3);
-        }
-
-        .profile-btn:hover:not(.active) {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-        }
-
-        .profile-commands {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .profile-commands h3 {
-            font-size: 1rem;
-            margin-bottom: 12px;
-            color: var(--accent);
-        }
-
-        .docker-toggle {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 32px;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: var(--border-radius);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 26px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(255, 255, 255, 0.1);
-            transition: .4s;
-            border-radius: 34px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-
-        input:checked + .slider {
-            background-color: var(--success);
-        }
-
-        input:checked + .slider:before {
-            transform: translateX(24px);
-        }
-
-        .docker-label {
-            font-size: 1rem;
-            color: var(--text-primary);
-            font-weight: 500;
-        }
-
-        .settings-container {
-            display: flex;
-            justify-content: center;
-            gap: 24px;
-            margin-bottom: 32px;
-        }
-
-        .toggle-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: var(--border-radius);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .generator-section {
-            margin-top: 48px;
-            padding-top: 32px;
-            border-top: 2px dashed rgba(255, 255, 255, 0.1);
-        }
-
-        .generator-title {
-            text-align: center;
-            margin-bottom: 24px;
-            font-size: 1.5rem;
-            color: var(--accent);
-        }
-
-        .template-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 20px;
-        }
-
-        .template-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: var(--border-radius);
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-
-        .template-card:hover {
-            border-color: var(--accent);
-            background: rgba(233, 69, 96, 0.1);
-        }
-
-        .utilities-section {
-            display: flex;
-            justify-content: center;
-            gap: 16px;
-            margin-top: 24px;
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: var(--text-secondary);
-        }
-
-        .template-name {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .template-desc {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-bottom: 16px;
-            height: 40px;
-            overflow: hidden;
-        }
-
-        .secrets-section {
-            margin-top: 48px;
-            padding-top: 32px;
-            border-top: 2px dashed rgba(255, 255, 255, 0.1);
-        }
-
-        .secrets-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-        }
-
-        .secrets-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: var(--border-radius);
-            padding: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .secrets-list {
-            margin-bottom: 16px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .secret-item {
-            display: grid;
-            grid-template-columns: 1fr 1fr auto;
-            gap: 8px;
-            margin-bottom: 8px;
-            align-items: center;
-        }
-
-        .secret-item input {
-            margin-bottom: 0;
-            padding: 4px 8px;
-            font-size: 0.85rem;
-        }
-
-        .btn-icon {
-            padding: 4px;
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-        }
-
-        .btn-icon:hover {
-            color: var(--accent);
-        }
-
-        .recommendation-badge {
-            font-size: 0.75rem;
-            color: var(--success);
-            background: rgba(0, 217, 165, 0.1);
-            padding: 2px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            display: inline-block;
-            margin-top: 4px;
-            border: 1px solid rgba(0, 217, 165, 0.3);
-            transition: all 0.2s ease;
-        }
-
-        .recommendation-badge:hover {
-            background: rgba(0, 217, 165, 0.2);
-            border-color: var(--success);
-        }
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.3);
+            --success: #10b981;
+            --danger: #ef4444;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+            --radius: 16px;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--accent-glow); } 70% { box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); } 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); } }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Inter', -apple-system, sans-serif; 
+            background-color: var(--bg); 
+            color: var(--text); 
+            padding: 40px 20px; 
+            line-height: 1.5;
+            background-image: 
+                radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.05) 0%, transparent 50%);
+        }
+
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        .header { text-align: center; margin-bottom: 48px; animation: fadeIn 0.6s ease-out; }
+        .header h1 { font-size: 3rem; font-weight: 800; letter-spacing: -0.025em; margin-bottom: 12px; background: linear-gradient(to right, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header p { color: var(--text-muted); font-size: 1.125rem; }
+
+        .profile-switcher { 
+            display: flex; background: var(--card-bg); padding: 6px; border-radius: 50px; 
+            width: fit-content; margin: 0 auto 40px; border: 1px solid var(--border);
+            animation: fadeIn 0.6s ease-out 0.1s both;
+        }
+        .profile-btn { 
+            padding: 10px 28px; border-radius: 50px; border: none; background: transparent; 
+            color: var(--text-muted); cursor: pointer; font-weight: 600; transition: all 0.2s; 
+        }
+        .profile-btn.active { background: var(--accent); color: var(--bg); }
+
+        .dashboard-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 32px; 
+            margin-bottom: 48px; animation: fadeIn 0.6s ease-out 0.2s both;
+        }
+
+        .glass-card { 
+            background: var(--card-bg); backdrop-filter: blur(12px); border-radius: var(--radius); 
+            padding: 32px; border: 1px solid var(--border); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover { border-color: var(--accent); transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2); }
+
+        .card-title { display: flex; align-items: center; gap: 12px; font-size: 1.5rem; font-weight: 700; margin-bottom: 24px; }
+        .card-icon { font-size: 1.75rem; }
+
+        .field-group { margin-bottom: 24px; }
+        .label { display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+        
+        .input-row { display: flex; gap: 12px; }
+        .path-display { 
+            flex: 1; padding: 12px 16px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); 
+            border-radius: 8px; font-family: monospace; font-size: 0.9rem; color: var(--accent);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        
+        select, input[type="text"] { 
+            width: 100%; padding: 12px 16px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); 
+            border-radius: 8px; color: var(--text); font-size: 1rem; outline: none; transition: border-color 0.2s;
+        }
+        select:focus, input[type="text"]:focus { border-color: var(--accent); outline: none; }
+        *:focus { outline: none; }
+        button:focus { outline: none; }
+
+        .btn { 
+            padding: 12px 24px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; 
+            transition: all 0.2s; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px;
+        }
+        .btn-ghost { background: var(--border); color: var(--text); }
+        .btn-ghost:hover { background: rgba(255, 255, 255, 0.2); }
+        .btn-primary { background: var(--accent); color: var(--bg); }
+        .btn-primary:hover { transform: scale(1.02); filter: brightness(1.1); }
+        .btn-start { 
+            background: var(--accent); color: var(--bg); font-size: 1.25rem; padding: 20px 60px; 
+            border-radius: 50px; animation: pulse 2s infinite; 
+        }
+        .btn-stop { background: var(--danger); color: white; border-radius: 50px; padding: 20px 40px; font-size: 1.25rem; }
+
+        .recommendation { 
+            margin-top: 12px; font-size: 0.875rem; color: var(--success); cursor: pointer; 
+            display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; 
+            background: rgba(16, 185, 129, 0.1); border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .main-actions { text-align: center; margin-bottom: 64px; animation: fadeIn 0.6s ease-out 0.3s both; display: flex; justify-content: center; gap: 24px; }
+
+        .utility-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; animation: fadeIn 0.6s ease-out 0.4s both; }
+        
+        .section-tag { display: block; text-align: center; font-weight: 800; color: var(--text-muted); margin-bottom: 24px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.2em; }
+
+        .secrets-manager { margin-top: 64px; animation: fadeIn 0.6s ease-out 0.5s both; }
+        .secret-field { display: flex; gap: 12px; margin-bottom: 12px; }
+        .secret-name { font-weight: 700; color: var(--accent); width: 140px; }
+
+        .toggle-track { display: flex; align-items: center; gap: 12px; margin: 32px 0; justify-content: center; }
+        input[type="checkbox"] { width: 44px; height: 24px; appearance: none; background: var(--border); border-radius: 20px; position: relative; cursor: pointer; transition: 0.3s; }
+        input[type="checkbox"]:checked { background: var(--success); }
+        input[type="checkbox"]::before { content: ''; position: absolute; width: 18px; height: 18px; background: white; border-radius: 50%; top: 3px; left: 3px; transition: 0.3s; }
+        input[type="checkbox"]:checked::before { left: 23px; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+        .empty-state { text-align: center; padding: 40px; color: var(--text-muted); border: 2px dashed var(--border); border-radius: var(--radius); }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🚀 Project Starter</h1>
-            <p>Configure and launch your full-stack project with one click</p>
+        <div class="header" style="position: relative;">
+            <h1>Project Starter</h1>
+            <p>Your premium dashboard for effortless full-stack development</p>
+            <button class="btn btn-ghost" style="position: absolute; right: 0; top: 0;" onclick="msg('refresh')">🔄 Refresh</button>
         </div>
 
-        <div class="profile-selector">
-            <button class="profile-btn ${config.activeProfile === 'dev' ? 'active' : ''}" onclick="setActiveProfile('dev')">Dev</button>
-            <button class="profile-btn ${config.activeProfile === 'prod' ? 'active' : ''}" onclick="setActiveProfile('prod')">Prod</button>
-            <button class="profile-btn ${config.activeProfile === 'test' ? 'active' : ''}" onclick="setActiveProfile('test')">Test</button>
+        <div class="profile-switcher">
+            <button class="profile-btn ${config.activeProfile === 'dev' ? 'active' : ''}" onclick="msg('setActiveProfile', 'dev')">Development</button>
+            <button class="profile-btn ${config.activeProfile === 'prod' ? 'active' : ''}" onclick="msg('setActiveProfile', 'prod')">Production</button>
+            <button class="profile-btn ${config.activeProfile === 'test' ? 'active' : ''}" onclick="msg('setActiveProfile', 'test')">Testing</button>
         </div>
 
-        <div class="settings-container">
-            <div class="toggle-item">
-                <span class="docker-label">🐳 Use Docker if available</span>
-                <label class="switch">
-                    <input type="checkbox" ${config.useDocker ? 'checked' : ''} onchange="setUseDocker(this.checked)">
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-            <div class="toggle-item">
-                <span class="docker-label">🔄 Auto Restart on Crash</span>
-                <label class="switch">
-                    <input type="checkbox" ${config.autoRestart ? 'checked' : ''} onchange="setAutoRestart(this.checked)">
-                    <span class="slider"></span>
-                </label>
-            </div>
+        <div class="main-actions">
+            <button class="btn btn-start" onclick="msg('startServers')">▶ START SERVERS</button>
+            <button class="btn btn-stop" onclick="msg('stopServers')">⏹ STOP</button>
         </div>
 
-        <div class="cards-container">
+        <div class="toggle-track">
+            <span class="label">Auto-Restart</span>
+            <input type="checkbox" ${config.autoRestart ? 'checked' : ''} onchange="msg('setAutoRestart', this.checked)">
+            <span style="width: 24px"></span>
+            <span class="label">Docker Mode</span>
+            <input type="checkbox" ${config.useDocker ? 'checked' : ''} onchange="msg('setUseDocker', this.checked)">
+        </div>
+
+        <div class="dashboard-grid">
             <!-- Frontend Card -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-icon">🎨</span>
-                    <span class="card-title">Frontend</span>
-                </div>
-                
-                <div class="form-group">
-                    <label>Folder Path</label>
-                    <div class="folder-selector">
-                        <div class="folder-path ${config.frontend.path ? '' : 'empty'}">
-                            ${config.frontend.path || 'No folder selected'}
-                        </div>
-                        <button class="btn-secondary" onclick="selectFrontendFolder()">Browse</button>
+            <div class="glass-card">
+                <div class="card-title"><span class="card-icon">🎨</span> Frontend</div>
+                <div class="field-group">
+                    <span class="label">Directory</span>
+                    <div class="input-row">
+                        <div class="path-display">${config.frontend.path || 'Root'}</div>
+                        <button class="btn btn-ghost" onclick="msg('selectFrontendFolder')">Browse</button>
                     </div>
                 </div>
-
-                <div class="form-group">
-                    <label>Framework</label>
-                    <select id="frontendFramework" onchange="setFrontendFramework(this.value)">
+                <div class="field-group">
+                    <span class="label">Framework</span>
+                    <select onchange="msg('setFrontendFramework', this.value)">
                         <option value="react-vite" ${config.frontend.framework === 'react-vite' ? 'selected' : ''}>React (Vite)</option>
-                        <option value="react-cra" ${config.frontend.framework === 'react-cra' ? 'selected' : ''}>React (CRA)</option>
-                        <option value="vue" ${config.frontend.framework === 'vue' ? 'selected' : ''}>Vue</option>
-                        <option value="angular" ${config.frontend.framework === 'angular' ? 'selected' : ''}>Angular</option>
                         <option value="nextjs" ${config.frontend.framework === 'nextjs' ? 'selected' : ''}>Next.js</option>
-                        <option value="nuxt" ${config.frontend.framework === 'nuxt' ? 'selected' : ''}>Nuxt</option>
-                        <option value="svelte" ${config.frontend.framework === 'svelte' ? 'selected' : ''}>Svelte</option>
                         <option value="custom" ${config.frontend.framework === 'custom' ? 'selected' : ''}>Custom Command</option>
                     </select>
                 </div>
-
-                <div class="form-group custom-command ${config.frontend.framework === 'custom' ? 'visible' : ''}" id="frontendCustom">
-                    <label>Custom Command</label>
-                    <input type="text" id="frontendInput" placeholder="e.g., npm run dev" value="${config.frontend.customCommand || ''}" 
-                           onchange="setCustomCommand('frontend', this.value)">
-                    ${frontendRecommendation ? `
-                        <div class="recommendation-badge" onclick="setCustomCommand('frontend', '${frontendRecommendation}'); document.getElementById('frontendInput').value='${frontendRecommendation}'">
-                            💡 Use recommended: ${frontendRecommendation}
-                        </div>
-                    ` : ''}
-                </div>
-
-                <div class="profile-commands">
-                    <h3>${config.activeProfile.toUpperCase()} Profile Command</h3>
-                    <div class="form-group">
-                        <label>Override Start Command</label>
-                        <input type="text" placeholder="e.g., npm run build && serve dist" 
-                               value="${config.profiles[config.activeProfile].frontend || ''}" 
-                               onchange="setProfileCommand('${config.activeProfile}', 'frontend', this.value)">
+                ${config.frontend.framework === 'custom' ? `
+                    <div class="field-group">
+                        <span class="label">Start Command</span>
+                        <input type="text" id="fe-cmd" value="${config.frontend.customCommand || ''}" onchange="msg('setCustomCommand', {type:'frontend', value:this.value})">
+                        ${frontendRecommendation ? `<div class="recommendation" onclick="setCmd('frontend', '${frontendRecommendation}')">💡 Recommended: ${frontendRecommendation}</div>` : ''}
                     </div>
-                </div>
+                ` : ''}
             </div>
 
             <!-- Backend Card -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-icon">⚙️</span>
-                    <span class="card-title">Backend</span>
-                </div>
-                
-                <div class="form-group">
-                    <label>Folder Path</label>
-                    <div class="folder-selector">
-                        <div class="folder-path ${config.backend.path ? '' : 'empty'}">
-                            ${config.backend.path || 'No folder selected'}
-                        </div>
-                        <button class="btn-secondary" onclick="selectBackendFolder()">Browse</button>
+            <div class="glass-card">
+                <div class="card-title"><span class="card-icon">⚙️</span> Backend</div>
+                <div class="field-group">
+                    <span class="label">Directory</span>
+                    <div class="input-row">
+                        <div class="path-display">${config.backend.path || 'Root'}</div>
+                        <button class="btn btn-ghost" onclick="msg('selectBackendFolder')">Browse</button>
                     </div>
                 </div>
-
-                <div class="form-group">
-                    <label>Framework</label>
-                    <select id="backendFramework" onchange="setBackendFramework(this.value)">
+                <div class="field-group">
+                    <span class="label">Framework</span>
+                    <select onchange="msg('setBackendFramework', this.value)">
                         <option value="express" ${config.backend.framework === 'express' ? 'selected' : ''}>Express</option>
                         <option value="nestjs" ${config.backend.framework === 'nestjs' ? 'selected' : ''}>NestJS</option>
-                        <option value="django" ${config.backend.framework === 'django' ? 'selected' : ''}>Django</option>
-                        <option value="flask" ${config.backend.framework === 'flask' ? 'selected' : ''}>Flask</option>
                         <option value="fastapi" ${config.backend.framework === 'fastapi' ? 'selected' : ''}>FastAPI</option>
-                        <option value="spring-boot" ${config.backend.framework === 'spring-boot' ? 'selected' : ''}>Spring Boot</option>
                         <option value="custom" ${config.backend.framework === 'custom' ? 'selected' : ''}>Custom Command</option>
                     </select>
                 </div>
-
-                <div class="form-group custom-command ${config.backend.framework === 'custom' ? 'visible' : ''}" id="backendCustom">
-                    <label>Custom Command</label>
-                    <input type="text" id="backendInput" placeholder="e.g., npm run dev" value="${config.backend.customCommand || ''}"
-                           onchange="setCustomCommand('backend', this.value)">
-                    ${backendRecommendation ? `
-                        <div class="recommendation-badge" onclick="setCustomCommand('backend', '${backendRecommendation}'); document.getElementById('backendInput').value='${backendRecommendation}'">
-                            💡 Use recommended: ${backendRecommendation}
-                        </div>
-                    ` : ''}
-                </div>
-
-                <div class="profile-commands">
-                    <h3>${config.activeProfile.toUpperCase()} Profile Command</h3>
-                    <div class="form-group">
-                        <label>Override Start Command</label>
-                        <input type="text" placeholder="e.g., java -jar app.jar" 
-                               value="${config.profiles[config.activeProfile].backend || ''}" 
-                               onchange="setProfileCommand('${config.activeProfile}', 'backend', this.value)">
+                ${config.backend.framework === 'custom' ? `
+                    <div class="field-group">
+                        <span class="label">Start Command</span>
+                        <input type="text" id="be-cmd" value="${config.backend.customCommand || ''}" onchange="msg('setCustomCommand', {type:'backend', value:this.value})">
+                        ${backendRecommendation ? `<div class="recommendation" onclick="setCmd('backend', '${backendRecommendation}')">💡 Recommended: ${backendRecommendation}</div>` : ''}
                     </div>
+                ` : ''}
+            </div>
+        </div>
+
+        <span class="section-tag">Powerful Utilities</span>
+        <div class="utility-grid">
+            <div class="glass-card">
+                <div class="card-title" style="font-size: 1.125rem"><span class="card-icon">📋</span> VS Code Tasks</div>
+                <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:20px">Generate automated tasks to launch servers directly from the command palette.</p>
+                <button class="btn btn-primary" style="width:100%" onclick="msg('generateTasks')">Generate Now</button>
+            </div>
+            <div class="glass-card">
+                <div class="card-title" style="font-size: 1.125rem"><span class="card-icon">🐙</span> GitHub Setup</div>
+                <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:20px">Initialize repository, create professional .gitignore and README.md files.</p>
+                <div style="display:flex; gap:8px">
+                    <button class="btn btn-ghost" style="flex:1" onclick="msg('githubInit')">Init Repo</button>
+                    <button class="btn btn-ghost" style="flex:1" onclick="msg('githubBoilerplate')">Docs</button>
                 </div>
             </div>
         </div>
 
-        <div class="actions">
-            <button class="btn-primary" onclick="startServers()">▶ Start Servers</button>
-            <button class="btn-danger" onclick="stopServers()">⏹ Stop Servers</button>
-        </div>
-
-        <div class="utilities-section">
-            <button class="btn-secondary btn-small" onclick="generateTasks()">📋 Generate VS Code Tasks</button>
-        </div>
-
-        <div class="status ${config.frontend.path && config.backend.path ? '' : 'unconfigured'}">
-            ${config.frontend.path && config.backend.path
-                ? '✅ Project configured and ready to start!'
-                : '⚠️ Please select both frontend and backend folders to get started'}
-        </div>
-
-        <div class="generator-section">
-            <h2 class="generator-title">🧙‍♂️ Project Template Generator</h2>
-            <div class="template-grid">
-                ${TEMPLATES.map(t => `
-                    <div class="template-card">
-                        <div class="template-name">${t.name}</div>
-                        <div class="template-desc">${t.description}</div>
-                        <button class="btn-primary btn-small" onclick="generateProject('${t.id}')">Scaffold Now</button>
-                    </div>
-                `).join('')}
+        <span class="section-tag">Project Scaffolding</span>
+        <div class="utility-grid" style="margin-top: 24px">
+            <div class="glass-card">
+                <div class="card-title" style="font-size: 1.125rem"><span class="card-icon">🧙‍♂️</span> MERN Stack</div>
+                <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:20px">React + Express + MongoDB. Perfect for modern web apps.</p>
+                <button class="btn btn-primary" style="width:100%" onclick="msg('generateProject', 'mern')">Scaffold MERN</button>
+            </div>
+            <div class="glass-card">
+                <div class="card-title" style="font-size: 1.125rem"><span class="card-icon">🚀</span> Next.js Fullstack</div>
+                <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:20px">Next.js + Prisma + Tailwind. The gold standard for SEO.</p>
+                <button class="btn btn-primary" style="width:100%" onclick="msg('generateProject', 'nextjs-fullstack')">Scaffold Next.js</button>
             </div>
         </div>
 
-        <div class="secrets-section">
-            <h2 class="generator-title">🔑 Secrets Manager (.env)</h2>
-            <div class="secrets-grid">
-                <!-- Frontend Secrets -->
-                <div class="secrets-card">
-                    <h3>Frontend Secrets</h3>
-                    <div id="frontendSecrets" class="secrets-list">
-                        <!-- Populated by JS -->
-                        <div class="status">Loading...</div>
-                    </div>
-                    <button class="btn-secondary btn-small" onclick="addSecret('frontend')">+ Add Variable</button>
-                    <button class="btn-primary btn-small" onclick="saveEnv('frontend')">Save .env</button>
+        <div class="secrets-manager">
+            <span class="section-tag">Secrets & Environment</span>
+            <div class="dashboard-grid">
+                <div class="glass-card">
+                    <div class="card-title" style="font-size: 1.125rem">Frontend .env</div>
+                    <div id="fe-secrets" class="secrets-list">Loading...</div>
+                    <button class="btn btn-ghost" style="margin-top:16px; width:100%" onclick="saveSecrets('frontend')">Save Changes</button>
                 </div>
-
-                <!-- Backend Secrets -->
-                <div class="secrets-card">
-                    <h3>Backend Secrets</h3>
-                    <div id="backendSecrets" class="secrets-list">
-                        <!-- Populated by JS -->
-                        <div class="status">Loading...</div>
-                    </div>
-                    <button class="btn-secondary btn-small" onclick="addSecret('backend')">+ Add Variable</button>
-                    <button class="btn-primary btn-small" onclick="saveEnv('backend')">Save .env</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="secrets-section">
-            <h2 class="generator-title">🐙 GitHub & Documentation</h2>
-            <div class="template-grid">
-                <div class="template-card">
-                    <div class="template-name">Git Initialization</div>
-                    <div class="template-desc">Initialize a new Git repository and create an initial commit.</div>
-                    <button class="btn-primary btn-small" onclick="githubInit()">Initialize Repo</button>
-                </div>
-                <div class="template-card">
-                    <div class="template-name">Boilerplate Docs</div>
-                    <div class="template-desc">Generate a professional .gitignore and a README.md file.</div>
-                    <button class="btn-primary btn-small" onclick="githubBoilerplate()">Generate Files</button>
+                <div class="glass-card">
+                    <div class="card-title" style="font-size: 1.125rem">Backend .env</div>
+                    <div id="be-secrets" class="secrets-list">Loading...</div>
+                    <button class="btn btn-ghost" style="margin-top:16px; width:100%" onclick="saveSecrets('backend')">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -990,151 +523,57 @@ export class ConfigPanel {
 
     <script>
         const vscode = acquireVsCodeApi();
+        const currentEnvs = { frontend: {}, backend: {} };
 
-        function selectFrontendFolder() {
-            vscode.postMessage({ command: 'selectFrontendFolder' });
+        function msg(command, value = null) {
+            if (value && value.type) {
+                vscode.postMessage({ command, type: value.type, value: value.value });
+            } else {
+                vscode.postMessage({ command, value });
+            }
         }
 
-        function selectBackendFolder() {
-            vscode.postMessage({ command: 'selectBackendFolder' });
+        function setCmd(type, val) {
+            const el = document.getElementById(type === 'frontend' ? 'fe-cmd' : 'be-cmd');
+            if (el) el.value = val;
+            msg('setCustomCommand', {type, value: val});
         }
-
-        function setFrontendFramework(value) {
-            vscode.postMessage({ command: 'setFrontendFramework', value });
-            document.getElementById('frontendCustom').classList.toggle('visible', value === 'custom');
-        }
-
-        function setBackendFramework(value) {
-            vscode.postMessage({ command: 'setBackendFramework', value });
-            document.getElementById('backendCustom').classList.toggle('visible', value === 'custom');
-        }
-
-        function setCustomCommand(type, value) {
-            vscode.postMessage({ command: 'setCustomCommand', type, value });
-        }
-
-        function setActiveProfile(value) {
-            vscode.postMessage({ command: 'setActiveProfile', value });
-        }
-
-        function setProfileCommand(profile, type, value) {
-            vscode.postMessage({ command: 'setProfileCommand', profile, type, value });
-        }
-
-        function setUseDocker(value) {
-            vscode.postMessage({ command: 'setUseDocker', value });
-        }
-
-        function setAutoRestart(value) {
-            vscode.postMessage({ command: 'setAutoRestart', value });
-        }
-
-        function generateProject(templateId) {
-            vscode.postMessage({ command: 'generateProject', templateId });
-        }
-
-        function generateTasks() {
-            vscode.postMessage({ command: 'generateTasks' });
-        }
-
-        function startServers() {
-            vscode.postMessage({ command: 'startServers' });
-        }
-
-        function stopServers() {
-            vscode.postMessage({ command: 'stopServers' });
-        }
-
-        // Secrets Management
-        let currentEnvs = {
-            frontend: {},
-            backend: {}
-        };
 
         window.addEventListener('message', event => {
-            const message = event.data;
-            if (message.command === 'envData') {
-                currentEnvs[message.type] = message.env;
-                renderSecrets(message.type);
+            const m = event.data;
+            if (m.command === 'envData') {
+                currentEnvs[m.type] = m.env;
+                renderSecrets(m.type);
             }
         });
 
         function renderSecrets(type) {
-            const container = document.getElementById(type + 'Secrets');
+            const container = document.getElementById(type === 'frontend' ? 'fe-secrets' : 'be-secrets');
             const env = currentEnvs[type];
-            
-            if (Object.keys(env).length === 0) {
-                container.innerHTML = '<div class="status">No variables found.</div>';
-                return;
-            }
-
             let html = '';
-            for (const [key, value] of Object.entries(env)) {
-                html += '<div class="secret-item">' +
-                        '<input type="text" value="' + key + '" onchange="updateSecretKey(\'' + type + '\', \'' + key + '\', this.value)" placeholder="KEY">' +
-                        '<input type="text" value="' + value + '" onchange="updateSecretValue(\'' + type + '\', \'' + key + '\', this.value)" placeholder="VALUE">' +
-                        '<button class="btn-icon" onclick="deleteSecret(\'' + type + '\', \'' + key + '\')">🗑️</button>' +
-                        '</div>';
+            for (const [k, v] of Object.entries(env)) {
+                html += \`
+                    <div class="secret-field">
+                        <span class="secret-name">\${k}</span>
+                        <input type="text" value="\${v}" onchange="updateSecret('\${type}', '\${k}', this.value)">
+                    </div>
+                \`;
             }
-            container.innerHTML = html;
+            container.innerHTML = html || '<div class="empty-state">No .env found</div>';
         }
 
-        function addSecret(type) {
-            const key = 'NEW_VAR_' + Date.now();
-            currentEnvs[type][key] = '';
-            renderSecrets(type);
-        }
-
-        function updateSecretKey(type, oldKey, newKey) {
-            const value = currentEnvs[type][oldKey];
-            delete currentEnvs[type][oldKey];
-            currentEnvs[type][newKey] = value;
-        }
-
-        function updateSecretValue(type, key, value) {
+        function updateSecret(type, key, value) {
             currentEnvs[type][key] = value;
         }
 
-        function deleteSecret(type, key) {
-            delete currentEnvs[type][key];
-            renderSecrets(type);
+        function saveSecrets(type) {
+            vscode.postMessage({ command: 'saveEnv', type, env: currentEnvs[type] });
         }
 
-        function saveEnv(type) {
-            vscode.postMessage({ 
-                command: 'saveEnv', 
-                type, 
-                env: currentEnvs[type] 
-            });
-        }
-
-        function githubInit() {
-            vscode.postMessage({ command: 'githubInit' });
-        }
-
-        function githubBoilerplate() {
-            vscode.postMessage({ command: 'githubBoilerplate' });
-        }
-
-        // Initial Load
-        vscode.postMessage({ command: 'getEnv', type: 'frontend' });
-        vscode.postMessage({ command: 'getEnv', type: 'backend' });
+        msg('getEnv', 'frontend');
+        msg('getEnv', 'backend');
     </script>
 </body>
 </html>`;
-    }
-
-    public dispose() {
-        ConfigPanel.currentPanel = undefined;
-
-        // Clean up our resources
-        this._panel.dispose();
-
-        while (this._disposables.length) {
-            const x = this._disposables.pop();
-            if (x) {
-                x.dispose();
-            }
-        }
     }
 }

@@ -123,17 +123,17 @@
                             "backend": ""
                         }
                     },
-                    "description": "Environment profiles with custom commands"
+                    "description": "Custom commands for different profiles"
                 },
                 "projectStarter.useDocker": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Use Docker if Dockerfile or docker-compose.yml is detected"
+                    "description": "Whether to use Docker for starting servers"
                 },
                 "projectStarter.autoRestart": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Automatically restart servers if they crash"
+                    "description": "Whether to automatically restart servers on crash"
                 }
             }
         }
