@@ -6,6 +6,7 @@ import { TemplateGenerator, TEMPLATES } from '../utils/templateGenerator';
 import { TaskGenerator } from '../utils/taskGenerator';
 import { EnvManager } from '../utils/envManager';
 import { GitHubUtils } from '../utils/githubUtils';
+import { TailwindUtils } from '../utils/tailwindUtils';
 import { LogProvider } from '../providers/logProvider';
 
 export class ConfigPanel {
@@ -107,6 +108,9 @@ export class ConfigPanel {
                         case 'githubBoilerplate':
                             await this._handleGithubBoilerplate();
                             break;
+                        case 'setupTailwindAndBranch':
+                            await this._handleSetupTailwindAndBranch();
+                            break;
                         case 'refresh':
                             this._update();
                             break;
@@ -204,6 +208,35 @@ export class ConfigPanel {
             await GitHubUtils.generateBoilerplate(workspaceFolders[0].uri.fsPath);
         } catch (error: any) {
             vscode.window.showErrorMessage(`GitHub Docs generation failed: ${error.message}`);
+        }
+    }
+
+    private async _handleSetupTailwindAndBranch() {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) return;
+
+        const config = this._configProvider.getConfig();
+        const frontendPath = config.frontend.path;
+        if (!frontendPath) {
+            vscode.window.showErrorMessage('Please select a frontend folder first.');
+            return;
+        }
+
+        const fullFrontendPath = path.join(workspaceFolders[0].uri.fsPath, frontendPath);
+
+        const branchName = await vscode.window.showInputBox({
+            prompt: 'Enter branch name for Tailwind setup',
+            value: 'feature/tailwind-setup'
+        });
+
+        if (!branchName) return;
+
+        try {
+            await GitHubUtils.createBranch(workspaceFolders[0].uri.fsPath, branchName);
+            await TailwindUtils.setup(fullFrontendPath, config.frontend.framework);
+            vscode.window.showInformationMessage('Tailwind setup initiated and branch created!');
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Setup failed: ${error.message}`);
         }
     }
 
@@ -434,6 +467,9 @@ export class ConfigPanel {
                         <option value="nextjs" ${config.frontend.framework === 'nextjs' ? 'selected' : ''}>Next.js</option>
                         <option value="custom" ${config.frontend.framework === 'custom' ? 'selected' : ''}>Custom Command</option>
                     </select>
+                </div>
+                <div class="field-group">
+                    <button class="btn btn-primary" style="width:100%; justify-content: center; background: linear-gradient(to right, #38bdf8, #10b981); color: #0f172a;" onclick="msg('setupTailwindAndBranch')">✨ Setup Tailwind & Branch</button>
                 </div>
                 ${config.frontend.framework === 'custom' ? `
                     <div class="field-group">

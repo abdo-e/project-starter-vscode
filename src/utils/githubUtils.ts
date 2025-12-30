@@ -124,4 +124,12 @@ This project was scaffolded and configured using the [Project Starter](https://g
             vscode.window.showInformationMessage('GitHub setup files (.gitignore, README.md) already exist.');
         }
     }
+    public static async createBranch(workspaceRoot: string, branchName: string): Promise<void> {
+        const terminal = vscode.window.createTerminal('🐙 Git Branch');
+        terminal.show();
+        terminal.sendText(`cd "${workspaceRoot}"`);
+        terminal.sendText(`git checkout -b "${branchName}"`);
+
+        vscode.window.showInformationMessage(`Created and switched to branch: ${branchName}`);
+    }
 }
