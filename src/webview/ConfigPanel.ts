@@ -108,8 +108,8 @@ export class ConfigPanel {
                         case 'githubBoilerplate':
                             await this._handleGithubBoilerplate();
                             break;
-                        case 'setupTailwindAndBranch':
-                            await this._handleSetupTailwindAndBranch();
+                        case 'setupTailwind':
+                            await this._handleSetupTailwind();
                             break;
                         case 'refresh':
                             this._update();
@@ -211,7 +211,7 @@ export class ConfigPanel {
         }
     }
 
-    private async _handleSetupTailwindAndBranch() {
+    private async _handleSetupTailwind() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) return;
 
@@ -224,17 +224,9 @@ export class ConfigPanel {
 
         const fullFrontendPath = path.join(workspaceFolders[0].uri.fsPath, frontendPath);
 
-        const branchName = await vscode.window.showInputBox({
-            prompt: 'Enter branch name for Tailwind setup',
-            value: 'feature/tailwind-setup'
-        });
-
-        if (!branchName) return;
-
         try {
-            await GitHubUtils.createBranch(workspaceFolders[0].uri.fsPath, branchName);
             await TailwindUtils.setup(fullFrontendPath, config.frontend.framework);
-            vscode.window.showInformationMessage('Tailwind setup initiated and branch created!');
+            vscode.window.showInformationMessage('Tailwind setup initiated!');
         } catch (error: any) {
             vscode.window.showErrorMessage(`Setup failed: ${error.message}`);
         }
@@ -469,7 +461,7 @@ export class ConfigPanel {
                     </select>
                 </div>
                 <div class="field-group">
-                    <button class="btn btn-primary" style="width:100%; justify-content: center; background: linear-gradient(to right, #38bdf8, #10b981); color: #0f172a;" onclick="msg('setupTailwindAndBranch')">✨ Setup Tailwind & Branch</button>
+                    <button class="btn btn-primary" style="width:100%; justify-content: center; background: linear-gradient(to right, #38bdf8, #10b981); color: #0f172a;" onclick="msg('setupTailwind')">✨ Setup Tailwind CSS</button>
                 </div>
                 ${config.frontend.framework === 'custom' ? `
                     <div class="field-group">
